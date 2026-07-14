@@ -1,0 +1,162 @@
+// CardioIntake — Prisma schema
+// PostgreSQL on Railway. See PRD §13.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Patient {
+  id             String        @id @default(cuid())
+  name           String
+  phone          String // used to match repeat visits
+  email          String?
+  age            Int
+  gender         Gender
+  city           String?
+  emergencyName  String?
+  emergencyPhone String?
+  createdAt      DateTime      @default(now())
+  intakes        Intake[]
+  appointments   Appointment[]
+  followUps      FollowUp[]
+
+  @@index([phone])
+}
+
+model Intake {
+  id             String       @id @default(cuid())
+  patientId      String
+  token          String // queue number e.g. "014"
+  visitType      VisitType // FIRST | REPEAT | FOLLOW_UP
+  hasAppointment Boolean      @default(false)
+  referredBy     String?
+  lastVisitDate  DateTime?
+  chiefComplaint String
+  duration       String
+  symptoms       Json // {chestPain:{...}, dyspnoea:{nyha,...}, palpitations:{...}, list:[...]}
+  redFlag        Boolean      @default(false)
+  conditions     Json // known conditions + years
+  cardiacHistory Json
+  familyHistory  String?
+  lifestyle      Json // smoking, tobacco, alcohol, activity, diet
+  heightCm       Float?
+  weightKg       Float?
+  bmi            Float? // derived
+  pregnant       Boolean?
+  allergies      String?
+  medications    Json // [{name,dose,frequency}]
+  reports        Json // {bpSys,bpDia,pulse,fbs,ppbs,hba1c,tc,ldl,hdl,tg,hb,creatinine,ecg:{...},echo:{lvef,...},tmt:{...},angio:{...}}
+  attachments    Attachment[]
+  status         IntakeStatus @default(WAITING) // WAITING | IN_CONSULT | CONSULTED | NO_SHOW
+  consentGiven   Boolean      @default(false)
+  locale         String       @default("en")
+  createdAt      DateTime     @default(now())
+  consultation   Consultation?
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([status])
+}
+
+model Consultation {
+  id                      String    @id @default(cuid())
+  intakeId                String    @unique
+  clinicBpSys             Int?
+  clinicBpDia             Int?
+  clinicPulse             Int?
+  spo2                    Int?
+  clinicWeightKg          Float?
+  diagnosis               String?
+  notes                   String?
+  investigationsAdvised   Json?
+  medicationsAdvised      String?
+  nextSteps               String?
+  recommendedFollowUpDate DateTime?
+  followUpReason          String?
+  outcome                 String?
+  authoredBy              String // "doctor" | "receptionist"
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  intake                  Intake    @relation(fields: [intakeId], references: [id], onDelete: Cascade)
+  followUps               FollowUp[]
+}
+
+model FollowUp {
+  id             String       @id @default(cuid())
+  patientId      String
+  consultationId String?
+  dueDate        DateTime
+  reason         String?
+  diagnosis      String?
+  called         Boolean      @default(false)
+  calledAt       DateTime?
+  calledOutcome  String? // REACHED | NOT_REACHABLE | BOOKED | DECLINED
+  callNotes      String?
+  booked         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
+
+  @@index([dueDate])
+}
+
+model Appointment {
+  id        String     @id @default(cuid())
+  patientId String?
+  name      String // allows booking before a Patient record exists
+  phone     String
+  date      DateTime
+  timeSlot  String
+  visitType VisitType
+  notes     String?
+  status    ApptStatus @default(SCHEDULED) // SCHEDULED | ARRIVED | CONSULTED | NO_SHOW | CANCELLED
+  createdAt DateTime   @default(now())
+  patient   Patient?   @relation(fields: [patientId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+}
+
+model Attachment {
+  id       String @id @default(cuid())
+  intakeId String
+  url      String
+  type     String // prescription | report
+  intake   Intake @relation(fields: [intakeId], references: [id], onDelete: Cascade)
+}
+
+model Setting {
+  key   String @id // clinicName, passwordHash, appUrl, doctorName
+  value String
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum VisitType {
+  FIRST
+  REPEAT
+  FOLLOW_UP
+}
+
+enum IntakeStatus {
+  WAITING
+  IN_CONSULT
+  CONSULTED
+  NO_SHOW
+}
+
+enum ApptStatus {
+  SCHEDULED
+  ARRIVED
+  CONSULTED
+  NO_SHOW
+  CANCELLED
+}
